@@ -1,0 +1,59 @@
+name: Xbox UWP Build
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch: # يتيح لك تشغيل البناء يدوياً
+
+jobs:
+  build-xbox-uwp:
+    runs-on: windows-latest
+
+    steps:
+    # 1. جلب ملفات المشروع من الـ Repository
+    - name: Checkout Source Code
+      uses: actions/checkout@v4
+
+    # 2. تهيئة بيئة بايثون (مطلوبة لتشغيل ملف الإعداد configure.py الخاص بالمشروع)
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+
+    # 3. تفعيل بيئة المترجم المطور MSVC ودعم حزم الـ UWP بدون الحاجة لواجهة VS
+    - name: Setup MSVC Developer Command Prompt
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: x64       # جهاز Xbox Series X/S و Xbox One يعملان بمعمارية x64
+        uwp: true       # تفعيل مكتبات UWP للربط (Linking)
+
+    # 4. تثبيت أداة Ninja والمكتبات المطلوبة لفك ضغط وفحص البناء
+    - name: Install Build Tools
+      run: |
+        pip install ninja splat64[mips]
+
+    # 5. تشغيل إعدادات البناء وتوليد ملفات الـ Compilation
+    # ملحوظة: تأكد من تعديل الـ configure.py ليتوافق مع أعلام (flags) المترجم الخاص بـ UWP (/ZW) إن لزم الأمر
+    - name: Configure Project
+      run: |
+        python configure.py
+
+    # 6. بدء عملية 컴پايل وبناء ملفات التشغيل عبر أداة Ninja
+    - name: Build Project using Ninja
+      run: |
+        ninja
+
+    # 7. حزم التطبيق بصيغة AppX المخصصة للـ Xbox Dev Mode بدون Visual Studio Wizard
+    # نستخدم أداة MakeAppx.exe المدمجة تلقائياً في Windows SDK للـ Runners
+    - name: Package AppX for Xbox UWP
+      run: |
+        MakeAppx pack /d ./port/src /p ./Tenkaichi3Decomp_Xbox.appx /o
+
+    # 8. رفع الملف الناتج (Artifact) لتقوم بتحميله وتثبيته على الـ Xbox
+    - name: Upload Xbox Build Artifact
+      uses: actions/artifacts@v4
+      with:
+        name: Tenkaichi3Decomp-Xbox-UWP
+        path: ./Tenkaichi3Xbox.appx
