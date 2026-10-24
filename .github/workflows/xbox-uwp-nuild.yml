@@ -1,0 +1,36 @@
+name: Build Tenkaichi Decomp Xbox UWP
+
+on:
+  workflow_dispatch: # يتيح لك تشغيل البناء يدوياً بضغطة زر
+
+jobs:
+  build-uwp:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v2
+
+    - name: Setup NuGet
+      uses: nuget/setup-nuget@v1
+
+    - name: Restore NuGet Packages
+      run: nuget restore port/xbox/Tenkaichi3Decomp.sln # تأكد من مسار ملف الـ .sln المخصص لـ UWP في المستودع الذي تستخدمه
+
+    - name: Build UWP AppX Package
+      run: |
+        msbuild port/xbox/Tenkaichi3Decomp.sln /p:Configuration=Release /p:Platform=x64 /p:AppxBundle=Always /p:AppxBundlePlatforms="x64" /p:UapAppxPackageBuildMode=StoreUpload /t:Publish
+
+    - name: Upload Xbox Build Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: Tenkaichi-Xbox-UWP-Build
+        path: |
+          **/AppPackages/**/*.msix
+          **/AppPackages/**/*.appx
+          **/AppPackages/**/*.appxbundle
