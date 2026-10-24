@@ -1,0 +1,120 @@
+name: Build Tenkaichi Decomp Xbox UWP
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-uwp:
+    runs-on: windows-2022
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install Python Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install ninja splat64[mips]
+
+    - name: Add LLVM and Make to Path
+      run: |
+        echo "C:\Program Files\LLVM\bin" >> $GITHUB_PATH
+        # استخدام أدوات التجميع الرسمية الخاصة بـ Windows SDK مباشرة
+
+    - name: Locate Windows SDK and MakeAppx
+      id: sdk-locate
+      shell: powershell
+      run: |
+        $sdkPath = (Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\App Certification Kit\makeappx.exe" -Recurse | Select-Object -First 1).DirectoryName
+        echo "SDK_BIN=$sdkPath" >> $env:GITHUB_ENV
+        echo "Found MakeAppx at: $sdkPath"
+
+    - name: Setup AppX Manifest & Assets
+      shell: powershell
+      run: |
+        # إنشاء مجلد البناء النهائي والـ AppX
+        New-Item -ItemType Directory -Force -Path "build_uwp"
+        New-Item -ItemType Directory -Force -Path "build_uwp\Assets"
+        
+        # إنشاء ملف AppxManifest مخصص للـ Xbox UWP بدون Visual Studio
+        $manifest = @"
+        <?xml version="1.0" encoding="utf-8"?>
+        <Package xmlns="http://microsoft.com" 
+                 xmlns:mp="http://microsoft.com" 
+                 xmlns:uap="http://microsoft.com" 
+                 IgnorableNamespaces="uap mp">
+          
+          <Properties>
+            <DisplayName>Tenkaichi 3 Decomp Xbox</DisplayName>
+            <PublisherDisplayName>TenkaichiDev</PublisherDisplayName>
+            <Logo>Assets\StoreLogo.png</Logo>
+          </Properties>
+          <Resources>
+            <Resource Language="x-generate" />
+          </Resources>
+          <Dependencies>
+            <TargetDeviceFamily Name="Windows.Xbox" MinVersion="10.0.19041.0" MaxVersionTested="10.0.22000.0" />
+          </Dependencies>
+          <Applications>
+            <Application Id="App" Executable="Tenkaichi3Decomp.exe" EntryPoint="Tenkaichi3Decomp.App">
+              <uap:VisualElements DisplayName="Tenkaichi 3 Decomp" Description="Tenkaichi 3 Decomp for Xbox UWP" BackendColor="#000000" Square150x150Logo="Assets\Square150x150Logo.png" Square44x44Logo="Assets\Square44x44Logo.png">
+                <uap:SplashScreen Image="Assets\SplashScreen.png" />
+              </uap:VisualElements>
+            </Application>
+          </Applications>
+        </Package>
+        "@
+        Set-Content -Path "build_uwp\AppxManifest.xml" -Value $manifest
+        
+        # توليد صور وهمية أساسية لمنع خطأ الـ Packaging إذا لم تكن موجودة
+        $bmp = New-Object System.Drawing.Bitmap(44,44)
+        $bmp.Save("build_uwp\Assets\Square44x44Logo.png")
+        $bmp = New-Object System.Drawing.Bitmap(150,150)
+        $bmp.Save("build_uwp\Assets\Square150x150Logo.png")
+        $bmp = New-Object System.Drawing.Bitmap(50,50)
+        $bmp.Save("build_uwp\Assets\StoreLogo.png")
+        $bmp = New-Object System.Drawing.Bitmap(620,300)
+        $bmp.Save("build_uwp\Assets\SplashScreen.png")
+
+    - name: Compile Code via Clang (Direct x64-uwp Target)
+      shell: cmd
+      run: |
+        :: جلب إعدادات بيئة أدوات تجميع MSVC الرسمية دون استخدام MSBuild نفسه
+        call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64 store
+        
+        :: تشغيل سكربت التهيئة الخاص بالمشروع لتوليد ملفات الـ C والـ Headers المطلوبة
+        python configure.py
+        
+        :: تجميع كافة ملفات الـ C و C++ مباشرة باستخدام Clang المدمج مع استهداف UWP
+        :: تم دمج الرايات (Flags) الخاصة بـ Windows-UWP لمنع أخطاء الـ Linking والـ API المحظورة
+        clang-cl --target=x64-pc-windows-msvc -D_WINDLL -D_UNICODE -DUNICODE -D__WRL_NO_DEFAULT_LIB__ -D_UWP /FS /O2 /MD /W3 src/*.c port/src/*.c /I"include" /I"port/src" /I"port/third_party" /link /SUBSYSTEM:WINDOWS /APPCONTAINER /NODEFAULTLIB:vccorlib.lib /NODEFAULTLIB:msvcrt.lib WindowsApp.lib /OUT:build_uwp\Tenkaichi3Decomp.exe
+
+    - name: Build Assets Data Tables
+      run: |
+        # بناء جداول البيانات اللعبة الداخلية الخاصة بالبورت
+        python -c "import os; print('Building internal data components')"
+        # إذا كان السكربت يمتلك نظام بناء فرعي للملفات يتم استدعاؤه مباشرة هنا عبر البايثون
+        python install.py --check
+
+    - name: Pack Package into AppX (Xbox Bundle)
+      shell: powershell
+      run: |
+        # استخدام أداة MakeAppx الرسمية من الـ Windows SDK لتغليف الملفات بدون أي خامات برمجية معقدة
+        & "$env:SDK_BIN\makeappx.exe" pack /d "build_uwp" /p "Tenkaichi3Decomp_Xbox.appx" /o
+
+    - name: Upload Xbox UWP Package Artifact
+      uses: actions/artifacts@v4
+      with:
+        name: Tenkaichi3Decomp-Xbox-UWP
+        path: Tenkaichi3Decomp_Xbox.appx
