@@ -1,0 +1,56 @@
+name: Build Tenkaichi Xbox UWP
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch: # يتيح لك تشغيل البناء يدوياً
+
+jobs:
+  build:
+    runs-on: windows-2022
+
+    steps:
+    # 1. جلب الكود المصدري للمشروع
+    - name: Checkout Code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive # جلب كافة المكتبات الفرعية إن وجدت
+
+    # 2. إعداد أداة MSBuild الخاصة بـ Visual Studio
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v2
+
+    # 3. تهيئة بيئة التطوير للمشروع (إن كان يعتمد على سكريبت إعداد مسبق مثل CMake أو Python لتوليد ملفات الحل المكتوبة بـ C/C++)
+    # تخطى هذه الخطوة إن كان ملف الـ .sln جاهزاً ومعداً لـ UWP مباشرة
+    - name: Setup Python & Configure Project
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+    - name: Configure Build Files
+      run: |
+        python configure.py --uwp
+
+    # 4. بناء نسخة الـ UWP الموجهة لجهاز Xbox (تستخدم معمارية x64 عادةً) بدون NuGet
+    # تم تمرير معاملات لمنع استدعاء استعادة الحزم عبر الإنترنت (/p:RestorePackages=false)
+    - name: Build UWP Application
+      run: |
+        msbuild port/uwp/Tenkaichi3Decomp.sln `
+          /p:Configuration=Release `
+          /p:Platform=x64 `
+          /p:AppxBundle=Always `
+          /p:AppxBundlePlatforms="x64" `
+          /p:BuildAppxUploadPackage=false `
+          /p:ResolveNuGetPackages=false `
+          /p:RestorePackages=false
+
+    # 5. رفع حزمة الـ (.appxbundle / .appx) الناتجة كملف مستندات (Artifact) لتحميلها وتثبيتها على الـ Xbox
+    - name: Upload UWP Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: Tenkaichi-Xbox-UWP
+        path: |
+          **/AppPackages/**/*.appx
+          **/AppPackages/**/*.appxbundle
+          **/AppPackages/**/*.msixbundle
