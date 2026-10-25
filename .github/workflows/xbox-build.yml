@@ -1,0 +1,39 @@
+name: Build Tenkaichi Decomp for Xbox
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch: # يتيح لك تشغيل البناء يدوياً من موقع جيتهاب
+
+jobs:
+  build-xbox:
+    runs-on: windows-latest
+
+    steps:
+    # 1. جلب الكود المصدري من المستودع
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive # لجلب أي مكتبات فرعية (submodules) مرتبطة تلقائياً
+
+    # 2. إعداد أداة MSBuild الخاصة بـ Visual Studio (مدمجة ولا تحتاج لتثبيت خارجي)
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v2
+
+    # 3. بناء المشروع مباشرة باستخدام ملف الحل (.sln) أو ملف المشروع (.vcxproj) عبر MSBuild
+    # ملاحظة: يتم تمرير المعاملات للتوافق مع منصة Xbox/UWP ومستوى البناء Release
+    - name: Compile Project for Xbox
+      run: |
+        msbuild Tenkaichi3Decomp.sln /p:Configuration=Release /p:Platform=x64 /p:AppxBundle=Always
+
+    # 4. رفع الملفات الناتجة (Artifacts) لتحميلها مباشرة بعد انتهاء البناء
+    - name: Upload Xbox Build Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: Tenkaichi3Decomp-Xbox-Build
+        path: |
+          **/Release/*.exe
+          **/Release/*.xbe
+          **/AppPackages/
