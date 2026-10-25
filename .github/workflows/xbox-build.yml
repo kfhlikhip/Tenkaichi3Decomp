@@ -1,0 +1,62 @@
+name: Build Tenkaichi Decomp for Xbox (No MSBuild)
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build-xbox:
+    runs-on: ubuntu-latest
+
+    steps:
+    # 1. جلب الكود المصدري للمشروع
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    # 2. إعداد بيئة بايثون (المشروع يعتمد على سكريبتات Python للتكوين)
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+
+    # 3. تثبيت أدوات البناء البديلة (GCC/Clang و Ninja)
+    - name: Install Build Tools (Ninja & Compilers)
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential ninja-build clang lld
+
+    # 4. التحقق من المتطلبات وتجهيز البيئة عبر سكريبتات المشروع
+    - name: Configure Project
+      run: |
+        python3 configure.py
+        python3 install.py --check
+
+    # 5. عملية البناء الفعلي باستخدام Ninja (بديل MSBuild السريع)
+    - name: Compile Project with Ninja
+      run: |
+        # بناء منصة الـ Xbox عبر سكريبت البناء المخصص للمشروع أو عبر Ninja مباشرة
+        # ملاحظة: إذا كان هناك سكريبت مخصص للـ Xbox مثل port/setup/build.sh قم بتشغيله
+        if [ -f "./port/setup/build.sh" ]; then
+          chmod +x ./port/setup/build.sh
+          ./port/setup/build.sh --platform xbox
+        else
+          ninja -C build
+        fi
+
+    # 6. رفع الملفات الناتجة (Artifacts) لتتمكن من تحميلها
+    - name: Upload Xbox Build Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: Tenkaichi3Decomp-Xbox
+        path: |
+          build/
+          dist/
+          *.bin
+          *.xbe
+          *.appx
+        if-no-files-found: warn
