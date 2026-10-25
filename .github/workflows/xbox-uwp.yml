@@ -1,0 +1,53 @@
+name: Build Tenkaichi Decomp Xbox (UWP)
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch: # يتيح لك تشغيل البناء يدوياً من موقع GitHub
+
+jobs:
+  build-xbox:
+    runs-on: windows-latest
+
+    steps:
+    # 1. جلب كود المشروع من المستودع
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive # لجلب المكتبات الفرعية إن وجدت
+
+    # 2. إعداد أداة MSBuild الخاصة بـ Visual Studio
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v2
+
+    # 3. إعداد بيئة البايثون (إذا كان المشروع يعتمد على سكريبت configure.py أو install.py)
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+
+    # 4. تشغيل سكريبت الإعداد الأولي وتجهيز الملفات (إذا كان مطلوباً في الـ Decomp)
+    - name: Configure Project
+      run: |
+        if (Test-Path "configure.py") {
+          python configure.py
+        }
+
+    # 5. بناء المشروع بصيغة UWP المخصصة لمنصة Xbox
+    # ملاحظة: يتم استهداف المعمارية x64 والتهيئة Release وتحديد مخرج UWP
+    - name: Build APPX/MSIX Package for Xbox
+      run: |
+        msbuild port/src/Tenkaichi3Decomp.sln /p:Configuration=Release /p:Platform=x64 /p:AppxBundle=Always /p:AppxBundlePlatforms="x64" /p:UapAppxPackageBuildMode=StoreUpload
+
+    # 6. رفع حزمة البناء كـ Artifact لتتمكن من تحميلها وتثبيتها على الـ Xbox
+    - name: Upload Xbox Package Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: Tenkaichi3Decomp-Xbox-x64
+        path: |
+          **/*.msix
+          **/*.appx
+          **/*.appxbundle
+          **/*.msixbundle
